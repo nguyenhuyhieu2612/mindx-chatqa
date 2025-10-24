@@ -1,0 +1,115 @@
+name: Build & Deploy to AKS
+
+on:
+  push:
+    branches: [main]
+
+env:
+  ACR_NAME: ${{ secrets.ACR_NAME }}
+  ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+  ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+
+  POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+  AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+  OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+  GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+  PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+  PINECONE_INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
+  PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
+
+  AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+  AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+
+  CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+  NAMESPACE: mindx-chatqa
+  APP_DEPLOYMENT: ai-chatbot
+jobs:
+  build-deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_NAME }}.azurecr.io
+          username: ${{ env.ACR_USERNAME }}
+          password: ${{ env.ACR_PASSWORD }}
+
+      - name: Build and Push Image
+        run: |
+          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/ai-chatbot:latest"
+          IMAGE_TAG_SHA="${{ env.ACR_NAME }}.azurecr.io/ai-chatbot:${{ github.sha }}"
+
+          docker build -t $IMAGE_TAG -t $IMAGE_TAG_SHA .
+          docker push $IMAGE_TAG
+          docker push $IMAGE_TAG_SHA
+          echo "🎉 Image pushed with SHA tag"
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ env.CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v1
+        with:
+          resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+          creds: ${{ env.CREDENTIALS }}
+
+      - name: Create Namespace
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          echo "✅ Namespace created"
+
+      - name: Create App Secrets
+        run: |
+          kubectl create secret generic app-secrets \
+            --namespace=mindx-chatqa \
+            --from-literal=POSTGRES_URL='${{ env.POSTGRES_URL }}' \
+            --from-literal=AUTH_SECRET='${{ env.AUTH_SECRET }}' \
+            --from-literal=OPENROUTER_API_KEY='${{ env.OPENROUTER_API_KEY }}' \
+            --from-literal=GOOGLE_GENERATIVE_AI_API_KEY='${{ env.GOOGLE_GENERATIVE_AI_API_KEY }}' \
+            --from-literal=PINECONE_API_KEY='${{ env.PINECONE_API_KEY }}' \
+            --from-literal=PINECONE_INDEX_NAME='${{ env.PINECONE_INDEX_NAME }}' \
+            --from-literal=PINECONE_ENVIRONMENT='${{ env.PINECONE_ENVIRONMENT }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ App secrets created/updated"
+
+      - name: Deploy App to AKS
+        run: |
+          kubectl apply -f k8s/app-configmap.yaml
+          kubectl apply -f k8s/app-service.yaml
+          kubectl apply -f k8s/app-deployment.yaml
+          kubectl set image deployment/${{ env.APP_DEPLOYMENT }} \
+            db-migrate=${{ env.ACR_NAME }}.azurecr.io/ai-chatbot:${{ github.sha }} \
+            app=${{ env.ACR_NAME }}.azurecr.io/ai-chatbot:${{ github.sha }} \
+            -n mindx-chatqa
+          kubectl rollout restart deployment/${{ env.APP_DEPLOYMENT }} -n mindx-chatqa
+          kubectl rollout status deployment/${{ env.APP_DEPLOYMENT }} -n mindx-chatqa --timeout=5m
+          echo "🚀 App deployed with SHA tag"
+
+      - name: Apply Ingress
+        run: |
+          kubectl apply -f k8s/ingress.yaml
+          echo "✅ Ingress applied"
+
+      - name: Health Check
+        run: |
+          echo "🎉 Deployment completed successfully!"
+
+      - name: Deployment Summary
+        run: |
+          echo "========================================"
+          echo "📦 Deployment Summary"
+          echo "========================================"
+          echo "App Image:       ${{ env.ACR_NAME }}.azurecr.io/ai-chatbot:${{ github.sha }}"
+          echo "AKS Cluster:     ${{ env.AKS_CLUSTER_NAME }}"
+          echo "Namespace:       mindx-chatqa"
+          echo "Ingress:         https://hieunh-ob.mindx.edu.vn"
+          echo "========================================"

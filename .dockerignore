@@ -1,0 +1,57 @@
+# Dependencies
+node_modules
+.pnpm-store
+npm-debug.log
+pnpm-debug.log
+yarn-error.log
+
+# Build outputs
+.next
+out
+dist
+build
+
+# Development
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+coverage
+tests/
+__tests__/
+*.test.ts
+*.test.js
+
+# Environment
+.env*
+!.env.example
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# CI/CD
+.github
+
+# Docker & K8s
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+k8s/
+
+# Vercel
+.vercel
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log
+
+# Scripts (keep for migrations)
+# scripts/
+

@@ -1,0 +1,374 @@
+import { geolocation } from "@vercel/functions";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  generateObject,
+  JsonToSseTransformStream,
+  smoothStream,
+  stepCountIs,
+  streamText,
+  ToolSet,
+} from "ai";
+import { z } from "zod";
+import { unstable_cache as cache } from "next/cache";
+import { after } from "next/server";
+import {
+  createResumableStreamContext,
+  type ResumableStreamContext,
+} from "resumable-stream";
+import type { ModelCatalog } from "tokenlens/core";
+import { fetchModels } from "tokenlens/fetch";
+import { getUsage } from "tokenlens/helpers";
+import { auth, type UserType } from "@/app/(auth)/auth";
+import type { VisibilityType } from "@/components/visibility-selector";
+import { entitlementsByUserType } from "@/lib/ai/entitlements";
+import type { ChatModel } from "@/lib/ai/models";
+import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
+import { myProvider } from "@/lib/ai/providers";
+import { isProductionEnvironment } from "@/lib/constants";
+import {
+  createStreamId,
+  deleteChatById,
+  getChatById,
+  getMessageCountByUserId,
+  getMessagesByChatId,
+  saveChat,
+  saveMessages,
+  updateChatLastContextById,
+} from "@/lib/db/queries";
+import { ChatSDKError } from "@/lib/errors";
+import type { ChatMessage } from "@/lib/types";
+import type { AppUsage } from "@/lib/usage";
+import { convertToUIMessages, generateUUID } from "@/lib/utils";
+import { generateTitleFromUserMessage } from "../../actions";
+import { type PostRequestBody, postRequestBodySchema } from "./schema";
+import { createDocument } from "@/lib/ai/tools/create-document";
+import { updateDocument } from "@/lib/ai/tools/update-document";
+import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
+import { generateFollowUpQuestions } from "@/lib/ai/tools/follow-up-questions";
+import { getKbDevTools, closeKbDevClient } from "@/lib/ai/mcp-client";
+
+export const maxDuration = 60;
+
+let globalStreamContext: ResumableStreamContext | null = null;
+
+const getTokenlensCatalog = cache(
+  async (): Promise<ModelCatalog | undefined> => {
+    try {
+      return await fetchModels();
+    } catch (err) {
+      console.warn(
+        "TokenLens: catalog fetch failed, using default catalog",
+        err
+      );
+      return; // tokenlens helpers will fall back to defaultCatalog
+    }
+  },
+  ["tokenlens-catalog"],
+  { revalidate: 24 * 60 * 60 } // 24 hours
+);
+
+export function getStreamContext() {
+  if (!globalStreamContext) {
+    try {
+      globalStreamContext = createResumableStreamContext({
+        waitUntil: after,
+      });
+    } catch (error: any) {
+      if (error.message.includes("REDIS_URL")) {
+        console.log(
+          " > Resumable streams are disabled due to missing REDIS_URL"
+        );
+      } else {
+        console.error(error);
+      }
+    }
+  }
+
+  return globalStreamContext;
+}
+
+export async function POST(request: Request) {
+  let requestBody: PostRequestBody;
+
+  try {
+    const json = await request.json();
+    requestBody = postRequestBodySchema.parse(json);
+  } catch (_) {
+    return new ChatSDKError("bad_request:api").toResponse();
+  }
+
+  try {
+    const {
+      id,
+      message,
+      selectedChatModel,
+      selectedVisibilityType,
+    }: {
+      id: string;
+      message: ChatMessage;
+      selectedChatModel: ChatModel["id"];
+      selectedVisibilityType: VisibilityType;
+    } = requestBody;
+
+    const session = await auth();
+
+    if (!session?.user) {
+      return new ChatSDKError("unauthorized:chat").toResponse();
+    }
+
+    const userType: UserType = session.user.type;
+
+    const messageCount = await getMessageCountByUserId({
+      id: session.user.id,
+      differenceInHours: 24,
+    });
+
+    if (messageCount > entitlementsByUserType[userType].maxMessagesPerDay) {
+      return new ChatSDKError("rate_limit:chat").toResponse();
+    }
+
+    const chat = await getChatById({ id });
+
+    if (chat) {
+      if (chat.userId !== session.user.id) {
+        return new ChatSDKError("forbidden:chat").toResponse();
+      }
+    } else {
+      const title = await generateTitleFromUserMessage({
+        message,
+      });
+
+      await saveChat({
+        id,
+        userId: session.user.id,
+        title,
+        visibility: selectedVisibilityType,
+      });
+    }
+
+    const messagesFromDb = await getMessagesByChatId({ id });
+    const uiMessages = [...convertToUIMessages(messagesFromDb), message];
+
+    const { longitude, latitude, city, country } = geolocation(request);
+
+    const requestHints: RequestHints = {
+      longitude,
+      latitude,
+      city,
+      country,
+    };
+
+    await saveMessages({
+      messages: [
+        {
+          chatId: id,
+          id: message.id,
+          role: "user",
+          parts: message.parts,
+          attachments: [],
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    const streamId = generateUUID(); 
+    await createStreamId({ streamId, chatId: id });
+
+    let finalMergedUsage: AppUsage | undefined;
+
+    const stream = createUIMessageStream({
+      execute: async ({ writer: dataStream }) => {
+        // Load MCP tools and filter to only kb-search-content
+        const allMcpTools = await getKbDevTools();
+        const mcpSearchTool = allMcpTools['kb-search-content'] 
+          ? { 'kb-search-content': allMcpTools['kb-search-content'] }
+          : {};
+
+        const tools = {
+          ...mcpSearchTool,
+          createDocument: createDocument({ session, dataStream }),
+          updateDocument: updateDocument({ session, dataStream }),
+          requestSuggestions: requestSuggestions({ session, dataStream }),
+          generateFollowUpQuestions: generateFollowUpQuestions({ dataStream }),
+        } as ToolSet;
+
+        const result = streamText({
+          model: myProvider.languageModel(selectedChatModel),
+          system: systemPrompt({ selectedChatModel, requestHints }),
+          messages: convertToModelMessages(uiMessages),
+          stopWhen: stepCountIs(5),
+          tools,
+          experimental_telemetry: {
+            isEnabled: isProductionEnvironment,
+            functionId: "stream-text",
+          },
+          onFinish: async ({ usage, text }) => {
+            try {
+              const providers = await getTokenlensCatalog();
+              const modelId =
+                myProvider.languageModel(selectedChatModel).modelId;
+              if (!modelId) {
+                finalMergedUsage = usage;
+                dataStream.write({
+                  type: "data-usage",
+                  data: finalMergedUsage,
+                });
+              } else if (!providers) {
+                finalMergedUsage = usage;
+                dataStream.write({
+                  type: "data-usage",
+                  data: finalMergedUsage,
+                });
+              } else {
+                const summary = getUsage({ modelId, usage, providers });
+                finalMergedUsage = { ...usage, ...summary, modelId } as AppUsage;
+                dataStream.write({ type: "data-usage", data: finalMergedUsage });
+              }
+            } catch (err) {
+              console.warn("TokenLens enrichment failed", err);
+              finalMergedUsage = usage;
+              dataStream.write({ type: "data-usage", data: finalMergedUsage });
+            }
+
+            // Auto-generate follow-up questions after response
+            if (text && text.trim().length > 0) {
+              try {
+                const followUpResult = await generateObject({
+                  model: myProvider.languageModel(selectedChatModel),
+                  system: `You are a helpful assistant generating follow-up questions. Based on the conversation context and the assistant's last response, generate 2-3 contextual follow-up questions that the USER would ask next.
+
+IMPORTANT RULES:
+1. Write questions from the USER's perspective (what they would ask), NOT as if you are asking them
+2. Keep questions SHORT and CONCISE (maximum 60 characters)
+3. Questions will be displayed as buttons on ONE LINE
+
+Format Examples:
+✅ CORRECT: "How do I set up Azure Container Registry?"
+✅ CORRECT: "What are the steps for AKS deployment?"
+✅ CORRECT: "Can you explain container orchestration?"
+❌ WRONG (too long): "Can you provide a detailed step-by-step guide on how to set up Azure Container Registry with authentication?"
+❌ WRONG (wrong perspective): "Have you set up Azure Container Registry?"`,
+                  prompt: `Last response: "${text.substring(0, 500)}"\n\nGenerate 2-3 SHORT follow-up questions (max 60 chars each) that naturally continue this conversation.`,
+                  schema: z.object({
+                    questions: z.array(z.string()).min(2).max(3),
+                  }),
+                });
+
+                // Stream follow-up questions (truncate if too long)
+                for (const question of followUpResult.object.questions.slice(0, 3)) {
+                  const truncatedQuestion = 
+                    question.length > 80 
+                      ? `${question.substring(0, 77)}...` 
+                      : question;
+                  
+                  dataStream.write({
+                    type: "data-followup",
+                    data: truncatedQuestion,
+                    transient: true,
+                  });
+                }
+              } catch (err) {
+                console.warn("Failed to generate follow-up questions", err);
+              }
+            }
+
+            // Close MCP client after response is complete
+            await closeKbDevClient();
+          },
+        });
+
+        result.consumeStream();
+
+        dataStream.merge(
+          result.toUIMessageStream({
+            sendReasoning: true,
+          })
+        );
+      },
+      generateId: generateUUID,
+      onFinish: async ({ messages }) => {
+        await saveMessages({
+          messages: messages.map((currentMessage) => ({
+            id: currentMessage.id,
+            role: currentMessage.role,
+            parts: currentMessage.parts,
+            createdAt: new Date(),
+            attachments: [],
+            chatId: id,
+          })),
+        });
+
+        if (finalMergedUsage) {
+          try {
+            await updateChatLastContextById({
+              chatId: id,
+              context: finalMergedUsage,
+            });
+          } catch (err) {
+            console.warn("Unable to persist last usage for chat", id, err);
+          }
+        }
+      },
+      onError: () => {
+        return "Oops, an error occurred!";
+      },
+    });
+
+    // const streamContext = getStreamContext();
+
+    // if (streamContext) {
+    //   return new Response(
+    //     await streamContext.resumableStream(streamId, () =>
+    //       stream.pipeThrough(new JsonToSseTransformStream())
+    //     )
+    //   );
+    // }
+
+    return new Response(stream.pipeThrough(new JsonToSseTransformStream()));
+  } catch (error) {
+    const vercelId = request.headers.get("x-vercel-id");
+
+    if (error instanceof ChatSDKError) {
+      return error.toResponse();
+    }
+
+    // Check for Vercel AI Gateway credit card error
+    if (
+      error instanceof Error &&
+      error.message?.includes(
+        "AI Gateway requires a valid credit card on file to service requests"
+      )
+    ) {
+      return new ChatSDKError("bad_request:activate_gateway").toResponse();
+    }
+
+    console.error("Unhandled error in chat API:", error, { vercelId });
+    return new ChatSDKError("offline:chat").toResponse();
+  }
+}
+
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return new ChatSDKError("bad_request:api").toResponse();
+  }
+
+  const session = await auth();
+
+  if (!session?.user) {
+    return new ChatSDKError("unauthorized:chat").toResponse();
+  }
+
+  const chat = await getChatById({ id });
+
+  if (chat?.userId !== session.user.id) {
+    return new ChatSDKError("forbidden:chat").toResponse();
+  }
+
+  const deletedChat = await deleteChatById({ id });
+
+  return Response.json(deletedChat, { status: 200 });
+}
