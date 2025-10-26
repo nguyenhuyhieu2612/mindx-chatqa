@@ -179,7 +179,6 @@ export async function POST(request: Request) {
 
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
-        // Load MCP tools and filter to only kb-search-content
         const allMcpTools = await getKbDevTools();
         const mcpSearchTool = allMcpTools['kb-search-content'] 
           ? { 'kb-search-content': allMcpTools['kb-search-content'] }
@@ -236,26 +235,21 @@ export async function POST(request: Request) {
               try {
                 const followUpResult = await generateObject({
                   model: myProvider.languageModel(selectedChatModel),
-                  system: `You are a helpful assistant generating follow-up questions. Based on the conversation context and the assistant's last response, generate 2-3 contextual follow-up questions that the USER would ask next.
+                  system: `You generate 2–3 short follow-up questions (max 60 chars) based on the last assistant reply.
+                  RULES:
+                  1. Write from the USER’s view.
+                  2. Keep them concise (for button display).
+                  3. Natural, contextual to the last answer.
 
-IMPORTANT RULES:
-1. Write questions from the USER's perspective (what they would ask), NOT as if you are asking them
-2. Keep questions SHORT and CONCISE (maximum 60 characters)
-3. Questions will be displayed as buttons on ONE LINE
-
-Format Examples:
-✅ CORRECT: "How do I set up Azure Container Registry?"
-✅ CORRECT: "What are the steps for AKS deployment?"
-✅ CORRECT: "Can you explain container orchestration?"
-❌ WRONG (too long): "Can you provide a detailed step-by-step guide on how to set up Azure Container Registry with authentication?"
-❌ WRONG (wrong perspective): "Have you set up Azure Container Registry?"`,
-                  prompt: `Last response: "${text.substring(0, 500)}"\n\nGenerate 2-3 SHORT follow-up questions (max 60 chars each) that naturally continue this conversation.`,
+                  ✅ "How to deploy on AKS?"
+                  ✅ "What is Azure Container Registry?"
+                  ❌ "Can you give a detailed step-by-step guide...?"`,
+                  prompt: `Last reply: "${text.substring(0, 500)}"\n\nGenerate 2–3 short, natural follow-up questions.`,
                   schema: z.object({
                     questions: z.array(z.string()).min(2).max(3),
                   }),
                 });
 
-                // Stream follow-up questions (truncate if too long)
                 for (const question of followUpResult.object.questions.slice(0, 3)) {
                   const truncatedQuestion = 
                     question.length > 80 
