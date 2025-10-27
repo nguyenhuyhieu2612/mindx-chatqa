@@ -5,6 +5,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
 export interface MindXMCPTransportOptions {
   url: string;
+  /** Personal Access Token (PAT) in format: pat_xxx */
   token: string;
 }
 
@@ -67,7 +68,7 @@ export class MindXMCPTransport implements Transport {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json, text/event-stream',
-      'Authorization': `Bearer ${this.token}`,
+      'Authorization': this.token,
     };
 
     // Include session ID in subsequent requests after initialization

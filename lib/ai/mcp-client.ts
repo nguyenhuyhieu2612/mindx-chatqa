@@ -2,7 +2,7 @@
  * MCP Client for MindX Knowledge Base Server
  * 
  * Manages connection lifecycle and provides tools from the MCP server.
- * Requires MINDX_DEV_TOKEN and MINDX_MCP_URL environment variables.
+ * Requires MINDX_DEV_TOKEN (PAT format: pat_xxx) and MINDX_MCP_URL environment variables.
  */
 
 import { experimental_createMCPClient as createMCPClient } from 'ai';

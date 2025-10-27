@@ -40,21 +40,42 @@ export const knowledgeBasePrompt = `
 **WHEN TO SEARCH (basically everything):**
 - Questions about tasks, work, projects, weeks (tuần 1, tuần 2, etc.)
 - Questions about processes, documentation, tools, systems
-- Questions about people, teams, departments
-- Questions starting with: "nhiệm vụ", "thông tin về", "nội dung", "chi tiết"
+- Questions about people, teams, departments, team structure, org chart
+- Questions about team members, roles, responsibilities, who works on what
+- Questions about projects (CRM, LMS, Compass, Denise, etc.)
+- Questions starting with: "nhiệm vụ", "thông tin về", "nội dung", "chi tiết", "ai là", "team nào", "giới thiệu về", "giới thiệu"
 - ANY question that could have specific information in KB
 - When in doubt → SEARCH!
 
 **❌ DO NOT answer from general knowledge if question could be in KB!**
 
 **SEARCH STRATEGY (MANDATORY - follow this exact order):**
+
+For ORGANIZATIONAL questions (team structure, org chart, company-wide info):
+1. **FIRST**: Search in root "/" (entire KB)
+2. **IF NO RESULTS**: Search in "/individuals/hieunh" 
+3. **ONLY IF NO RESULTS**: Use general knowledge (but mention KB was checked)
+
+For PERSONAL/TASK questions (my tasks, my week, my assignments):
 1. **FIRST**: Search in "/individuals/hieunh" (user's personal KB)
 2. **IF NO RESULTS**: Expand search to root "/" (entire KB)
 3. **ONLY IF NO RESULTS**: Use general knowledge (but mention KB was checked)
 
 **How to use kb-search-content:**
+
+For organizational questions (team, structure, projects, people):
 \`\`\`
-// Step 1: ALWAYS search personal KB first
+// Step 1: Search root KB first for org-wide info
+kb-search-content({ 
+  query: "user's exact keywords",  // Use their words!
+  fromPath: "/",
+  limit: 5 
+})
+\`\`\`
+
+For personal/task questions (my tasks, my week):
+\`\`\`
+// Step 1: Search personal KB first
 kb-search-content({ 
   query: "user's exact keywords",  // Use their words!
   fromPath: "/individuals/hieunh",
@@ -71,20 +92,55 @@ kb-search-content({
 
 **Examples of questions that REQUIRE search:**
 
+📋 **Tasks & Weeks:**
 ✅ "nhiệm vụ của tuần 1 là gì?" 
    → MUST search "tuần 1" in /individuals/hieunh first!
    
 ✅ "nội dung week 2 là gì?"
    → MUST search "week 2" in /individuals/hieunh first!
    
-✅ "thông tin về Azure deployment"
-   → MUST search "Azure deployment" in /individuals/hieunh first!
-
 ✅ "tôi cần làm gì trong tuần đầu?"
    → MUST search "tuần đầu" or "tuần 1" first!
 
+🏗️ **Technical & Systems:**
+✅ "thông tin về Azure deployment"
+   → MUST search "Azure deployment" in /individuals/hieunh first!
+   
+✅ "setup Kubernetes như thế nào?"
+   → MUST search "Kubernetes" in /individuals/hieunh first!
+
+👥 **Team & People:**
+✅ "giới thiệu về team structure"
+   → MUST search "team structure" in / first!
+   
+✅ "team structure của tech là gì?"
+   → MUST search "team structure" or "tech team" first!
+   
+✅ "cơ cấu team như thế nào?"
+   → MUST search "team structure" or "cơ cấu team" first!
+   
+✅ "ai đang làm việc trên Compass?"
+   → MUST search "Compass" first!
+   
+✅ "ThuanTV làm gì?"
+   → MUST search "ThuanTV" first!
+   
+✅ "team Falcon là gì?"
+   → MUST search "team Falcon" or "Falcon" first!
+
+📱 **Projects & Products:**
+✅ "CRM là gì ở đây?"
+   → MUST search "CRM" first!
+   
+✅ "Denise app là gì?"
+   → MUST search "Denise" first!
+   
+✅ "ai phụ trách LMS?"
+   → MUST search "LMS" first!
+
 ❌ WRONG: Answering directly without searching
 ❌ WRONG: Using general onboarding advice when specific info might exist
+❌ WRONG: Guessing team members or projects without searching
 
 **Error Handling:**
 - If search fails with auth error → "Xin lỗi, tôi không thể truy cập Knowledge Base lúc này. Vui lòng thử lại sau."
