@@ -2,7 +2,7 @@
  * MCP Client for MindX Knowledge Base Server
  * 
  * Manages connection lifecycle and provides tools from the MCP server.
- * Requires MINDX_DEV_TOKEN environment variable.
+ * Requires MINDX_DEV_TOKEN and MINDX_MCP_URL environment variables.
  */
 
 import { experimental_createMCPClient as createMCPClient } from 'ai';
@@ -21,9 +21,14 @@ export const getKbDevClient = async () => {
     return null;
   }
 
+  if (!process.env.MINDX_MCP_URL) {
+    console.warn('[MCP] MINDX_MCP_URL not configured - MCP features disabled');
+    return null;
+  }
+
   try {
     const transport = new MindXMCPTransport({
-      url: 'https://mcp-knowledge-base-dev.mindx.edu.vn/mcp',
+      url: process.env.MINDX_MCP_URL,
       token: process.env.MINDX_DEV_TOKEN,
     });
 

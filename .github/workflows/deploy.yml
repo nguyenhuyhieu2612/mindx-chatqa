@@ -16,6 +16,8 @@ env:
   PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
   PINECONE_INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
   PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
+  MINDX_DEV_TOKEN: ${{ secrets.MINDX_DEV_TOKEN }}
+  MINDX_MCP_URL: ${{ secrets.MINDX_MCP_URL }}
 
   AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
   AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
@@ -78,6 +80,8 @@ jobs:
             --from-literal=PINECONE_API_KEY='${{ env.PINECONE_API_KEY }}' \
             --from-literal=PINECONE_INDEX_NAME='${{ env.PINECONE_INDEX_NAME }}' \
             --from-literal=PINECONE_ENVIRONMENT='${{ env.PINECONE_ENVIRONMENT }}' \
+            --from-literal=MINDX_DEV_TOKEN='${{ env.MINDX_DEV_TOKEN }}' \
+            --from-literal=MINDX_MCP_URL='${{ env.MINDX_MCP_URL }}' \
             --dry-run=client -o yaml | kubectl apply -f -
           echo "✅ App secrets created/updated"
 
