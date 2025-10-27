@@ -41,7 +41,7 @@ function PureChatHeader({
         </Button>
       )}
 
-      {!isReadonly && (
+      {/* {!isReadonly && (
         <VisibilitySelector
           chatId={chatId}
           className="order-1 md:order-2"
@@ -62,7 +62,7 @@ function PureChatHeader({
           <VercelIcon />
           <span className="ml-2">Deploy with Vercel</span>
         </a>
-      </Button>
+      </Button> */}
     </header>
   );
 }
