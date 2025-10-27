@@ -200,10 +200,12 @@
     @apply bg-background text-foreground;
     overflow-x: hidden;
     position: relative;
+    font-size: 16px; /* Base font size - increased from default 14px */
   }
 
   html {
     overflow-x: hidden;
+    font-size: 16px; /* Root font size for rem units */
   }
 }
 
@@ -313,5 +315,6 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 16px; /* Increased from default */
   }
 }
