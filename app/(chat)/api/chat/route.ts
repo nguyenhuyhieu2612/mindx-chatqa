@@ -45,7 +45,6 @@ import { type PostRequestBody, postRequestBodySchema } from "./schema";
 import { createDocument } from "@/lib/ai/tools/create-document";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
-import { generateFollowUpQuestions } from "@/lib/ai/tools/follow-up-questions";
 import { getKbDevTools, closeKbDevClient } from "@/lib/ai/mcp-client";
 
 export const maxDuration = 60;
@@ -189,7 +188,6 @@ export async function POST(request: Request) {
           createDocument: createDocument({ session, dataStream }),
           updateDocument: updateDocument({ session, dataStream }),
           requestSuggestions: requestSuggestions({ session, dataStream }),
-          generateFollowUpQuestions: generateFollowUpQuestions({ dataStream }),
         } as ToolSet;
 
         const result = streamText({
