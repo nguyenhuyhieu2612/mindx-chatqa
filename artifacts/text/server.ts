@@ -14,6 +14,7 @@ export const textDocumentHandler = createDocumentHandler<"text">({
         "Write about the given topic. Markdown is supported. Use headings wherever appropriate.",
       experimental_transform: smoothStream({ chunking: "word" }),
       prompt: title,
+      maxOutputTokens: 2048,
     });
 
     for await (const delta of fullStream) {
@@ -42,6 +43,7 @@ export const textDocumentHandler = createDocumentHandler<"text">({
       system: updateDocumentPrompt(document.content, "text"),
       experimental_transform: smoothStream({ chunking: "word" }),
       prompt: description,
+      maxOutputTokens: 2048,
       providerOptions: {
         openai: {
           prediction: {

@@ -194,6 +194,7 @@ export async function POST(request: Request) {
           model: myProvider.languageModel(selectedChatModel),
           system: systemPrompt({ selectedChatModel, requestHints }),
           messages: convertToModelMessages(uiMessages),
+          maxOutputTokens: 4096,
           stopWhen: stepCountIs(5),
           tools,
           experimental_telemetry: {
@@ -233,9 +234,10 @@ export async function POST(request: Request) {
               try {
                 const followUpResult = await generateObject({
                   model: myProvider.languageModel(selectedChatModel),
+                  maxOutputTokens: 512,
                   system: `You generate 2–3 short follow-up questions (max 60 chars) based on the last assistant reply.
                   RULES:
-                  1. Write from the USER’s view.
+                  1. Write from the USER's view.
                   2. Keep them concise (for button display).
                   3. Natural, contextual to the last answer.
 
