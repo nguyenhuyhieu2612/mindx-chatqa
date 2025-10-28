@@ -4,5 +4,5 @@ metadata:
   name: ai-chatbot-config
   namespace: mindx-chatqa
 data:
-  NODE_ENV: "production"
+  NODE_ENV: "development"
   AUTH_TRUST_HOST: "true"
