@@ -13,7 +13,7 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
       model: myProvider.languageModel("artifact-model"),
       system: codePrompt,
       prompt: title,
-      maxOutputTokens: 2048,
+      // maxOutputTokens: 2048,
       schema: z.object({
         code: z.string(),
       }),
@@ -47,7 +47,7 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
       model: myProvider.languageModel("artifact-model"),
       system: updateDocumentPrompt(document.content, "code"),
       prompt: description,
-      maxOutputTokens: 2048,
+      // maxOutputTokens: 2048,
       schema: z.object({
         code: z.string(),
       }),
