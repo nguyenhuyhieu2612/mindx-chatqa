@@ -43,12 +43,20 @@ const model = isTestEnvironment
     })()
     : (() => {
         console.log("Using OpenRouter models for production environment");
-        return customProvider({
+        // return customProvider({
+        //   languageModels: {
+        //     "chat-model": openrouter.chat("openai/gpt-4o"),
+        //     "chat-model-reasoning": openrouter.chat("openai/gpt-4o"),
+        //     "title-model": openrouter.chat("openai/gpt-4o-mini"),
+        //     "artifact-model": openrouter.chat("openai/gpt-4o-mini"),
+        //   },
+        // })
+          return customProvider({
           languageModels: {
-            "chat-model": openrouter.chat("openai/gpt-4o"),
-            "chat-model-reasoning": openrouter.chat("openai/gpt-4o"),
-            "title-model": openrouter.chat("openai/gpt-4o-mini"),
-            "artifact-model": openrouter.chat("openai/gpt-4o-mini"),
+            "chat-model": google.chat("gemini-2.5-flash"),
+            "chat-model-reasoning": google.chat("gemini-2.5-flash"),
+            "title-model": google.chat("gemini-2.5-flash"),
+            "artifact-model": google.chat("gemini-2.5-flash"),
           },
         })
     })()
