@@ -35,7 +35,6 @@ function readKnowledgeBase(baseDir: string): IngestDocument[] {
                         source: relativePath.replace(/\\/g, "/"),
                         week,
                         filename,
-                        category: "course-material",
                         fileType: "markdown",
                     },
                 });

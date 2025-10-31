@@ -46,6 +46,7 @@ import { createDocument } from "@/lib/ai/tools/create-document";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { getKbDevTools, closeKbDevClient } from "@/lib/ai/mcp-client";
+import { searchKnowledgeTool } from "@/lib/ai/tools/search-knowledge";
 
 export const maxDuration = 60;
 
@@ -184,10 +185,11 @@ export async function POST(request: Request) {
           : {};
 
         const tools = {
-          ...mcpSearchTool,
+          // ...mcpSearchTool,
           createDocument: createDocument({ session, dataStream }),
           updateDocument: updateDocument({ session, dataStream }),
           requestSuggestions: requestSuggestions({ session, dataStream }),
+          searchKnowledge: searchKnowledgeTool,
         } as ToolSet;
 
         const result = streamText({
